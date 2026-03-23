@@ -6,4 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./createRoomRequest";
+export * from "./errorResponse";
 export * from "./healthStatus";
+export * from "./room";
+export * from "./verifyPasswordRequest";
+export * from "./verifyPasswordResponse";

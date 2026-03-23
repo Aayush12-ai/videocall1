@@ -14,3 +14,43 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * @summary Create a new video call room
+ */
+export const CreateRoomBody = zod.object({
+  hostName: zod.string(),
+});
+
+/**
+ * @summary Get room info
+ */
+export const GetRoomParams = zod.object({
+  roomId: zod.coerce.string(),
+});
+
+export const GetRoomResponse = zod.object({
+  id: zod.string(),
+  hostName: zod.string(),
+  createdAt: zod.date(),
+  password: zod
+    .string()
+    .optional()
+    .describe("Only returned when creating a room (for the host)"),
+});
+
+/**
+ * @summary Verify room password
+ */
+export const VerifyRoomPasswordParams = zod.object({
+  roomId: zod.coerce.string(),
+});
+
+export const VerifyRoomPasswordBody = zod.object({
+  password: zod.string(),
+});
+
+export const VerifyRoomPasswordResponse = zod.object({
+  valid: zod.boolean(),
+  token: zod.string(),
+});

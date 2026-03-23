@@ -5,18 +5,28 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  CreateRoomRequest,
+  ErrorResponse,
+  HealthStatus,
+  Room,
+  VerifyPasswordRequest,
+  VerifyPasswordResponse,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +109,253 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Create a new video call room
+ */
+export const getCreateRoomUrl = () => {
+  return `/api/rooms`;
+};
+
+export const createRoom = async (
+  createRoomRequest: CreateRoomRequest,
+  options?: RequestInit,
+): Promise<Room> => {
+  return customFetch<Room>(getCreateRoomUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createRoomRequest),
+  });
+};
+
+export const getCreateRoomMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRoom>>,
+    TError,
+    { data: BodyType<CreateRoomRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createRoom>>,
+  TError,
+  { data: BodyType<CreateRoomRequest> },
+  TContext
+> => {
+  const mutationKey = ["createRoom"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createRoom>>,
+    { data: BodyType<CreateRoomRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createRoom(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateRoomMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createRoom>>
+>;
+export type CreateRoomMutationBody = BodyType<CreateRoomRequest>;
+export type CreateRoomMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new video call room
+ */
+export const useCreateRoom = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRoom>>,
+    TError,
+    { data: BodyType<CreateRoomRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createRoom>>,
+  TError,
+  { data: BodyType<CreateRoomRequest> },
+  TContext
+> => {
+  return useMutation(getCreateRoomMutationOptions(options));
+};
+
+/**
+ * @summary Get room info
+ */
+export const getGetRoomUrl = (roomId: string) => {
+  return `/api/rooms/${roomId}`;
+};
+
+export const getRoom = async (
+  roomId: string,
+  options?: RequestInit,
+): Promise<Room> => {
+  return customFetch<Room>(getGetRoomUrl(roomId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRoomQueryKey = (roomId: string) => {
+  return [`/api/rooms/${roomId}`] as const;
+};
+
+export const getGetRoomQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRoom>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  roomId: string,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetRoomQueryKey(roomId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getRoom>>> = ({
+    signal,
+  }) => getRoom(roomId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!roomId,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
+};
+
+export type GetRoomQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRoom>>
+>;
+export type GetRoomQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get room info
+ */
+
+export function useGetRoom<
+  TData = Awaited<ReturnType<typeof getRoom>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  roomId: string,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRoomQueryOptions(roomId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Verify room password
+ */
+export const getVerifyRoomPasswordUrl = (roomId: string) => {
+  return `/api/rooms/${roomId}/verify`;
+};
+
+export const verifyRoomPassword = async (
+  roomId: string,
+  verifyPasswordRequest: VerifyPasswordRequest,
+  options?: RequestInit,
+): Promise<VerifyPasswordResponse> => {
+  return customFetch<VerifyPasswordResponse>(getVerifyRoomPasswordUrl(roomId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(verifyPasswordRequest),
+  });
+};
+
+export const getVerifyRoomPasswordMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof verifyRoomPassword>>,
+    TError,
+    { roomId: string; data: BodyType<VerifyPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof verifyRoomPassword>>,
+  TError,
+  { roomId: string; data: BodyType<VerifyPasswordRequest> },
+  TContext
+> => {
+  const mutationKey = ["verifyRoomPassword"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof verifyRoomPassword>>,
+    { roomId: string; data: BodyType<VerifyPasswordRequest> }
+  > = (props) => {
+    const { roomId, data } = props ?? {};
+
+    return verifyRoomPassword(roomId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VerifyRoomPasswordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof verifyRoomPassword>>
+>;
+export type VerifyRoomPasswordMutationBody = BodyType<VerifyPasswordRequest>;
+export type VerifyRoomPasswordMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Verify room password
+ */
+export const useVerifyRoomPassword = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof verifyRoomPassword>>,
+    TError,
+    { roomId: string; data: BodyType<VerifyPasswordRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof verifyRoomPassword>>,
+  TError,
+  { roomId: string; data: BodyType<VerifyPasswordRequest> },
+  TContext
+> => {
+  return useMutation(getVerifyRoomPasswordMutationOptions(options));
+};

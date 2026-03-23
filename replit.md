@@ -16,12 +16,22 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 
+## Features
+
+### Video Call App (`artifacts/video-call`)
+- React + Vite frontend with dark mode design
+- Create a video call room → get a shareable link + password
+- Guest visits link, enters password, joins the call
+- WebRTC peer-to-peer video/audio (two participants)
+- WebSocket signaling server at `/ws` (on the API server)
+
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server + WebSocket signaling
+│   └── video-call/         # React video call frontend
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
