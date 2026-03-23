@@ -60,11 +60,12 @@ export function setupSignaling(server: Server) {
         const others = [...room];
         room.push(client);
 
-        logger.info({ roomId, name, isHost }, "Client joined room");
+        logger.info({ roomId, name, isHost, existingPeers: others.length }, "Client joined room");
 
+        // Only tell the EXISTING peers that someone new joined (they will create the offer).
+        // The newly joined peer does NOT get peer-joined — it just waits to receive an offer.
         for (const other of others) {
           send(other.ws, { type: "peer-joined", name });
-          send(ws, { type: "peer-joined", name: other.name });
         }
         return;
       }
