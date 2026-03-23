@@ -14,9 +14,29 @@ export function VideoPlayer({ stream, muted = false, className, mirrored = false
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+    const video = videoRef.current;
+    if (!video) return;
+
+    // React doesn't reliably reflect the muted prop to the DOM — set it directly
+    video.muted = muted;
+  }, [muted]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !stream) return;
+
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
     }
+
+    video.play().catch(() => {
+      // Autoplay was blocked — listen for a user gesture then retry
+      const retry = () => {
+        video.play().catch(() => {});
+        document.removeEventListener("click", retry);
+      };
+      document.addEventListener("click", retry, { once: true });
+    });
   }, [stream]);
 
   if (!stream) {
@@ -36,7 +56,6 @@ export function VideoPlayer({ stream, muted = false, className, mirrored = false
         ref={videoRef}
         autoPlay
         playsInline
-        muted={muted}
         className={cn(
           "w-full h-full object-cover",
           mirrored && "-scale-x-100"
