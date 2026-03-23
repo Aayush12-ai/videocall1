@@ -51,9 +51,14 @@ export function useWebRTC(roomId: string, token: string, name: string) {
         }
 
         localStreamRef.current = stream;
-        setState(s => ({ ...s, localStream: stream }));
 
-        // 2. Initialize Peer Connection
+        // Use a video-only stream for local preview — audio tracks must NEVER
+        // be attached to a local <video> element, even when muted, because some
+        // browsers still process the audio and cause the user to hear themselves.
+        const videoOnlyStream = new MediaStream(stream.getVideoTracks());
+        setState(s => ({ ...s, localStream: videoOnlyStream }));
+
+        // 2. Initialize Peer Connection — add the FULL stream (including audio)
         const pc = new RTCPeerConnection(ICE_SERVERS);
         pcRef.current = pc;
 
