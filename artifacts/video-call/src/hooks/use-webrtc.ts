@@ -38,7 +38,11 @@ export function useWebRTC(roomId: string, token: string, name: string) {
         // 1. Get Local Media
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-          audio: true,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
         });
 
         if (!mounted) {

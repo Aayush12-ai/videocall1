@@ -9,7 +9,7 @@ export function Call() {
   const params = useParams();
   const roomId = params.roomId || "";
   const [, setLocation] = useLocation();
-  
+
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
 
@@ -17,12 +17,12 @@ export function Call() {
     const searchParams = new URLSearchParams(window.location.search);
     const t = searchParams.get("token");
     const n = searchParams.get("name");
-    
+
     if (!t || !n) {
       setLocation("/");
       return;
     }
-    
+
     setToken(t);
     setName(n);
   }, [setLocation]);
@@ -35,7 +35,7 @@ export function Call() {
     isMuted,
     isVideoOff,
     toggleMute,
-    toggleVideo
+    toggleVideo,
   } = useWebRTC(roomId, token, name);
 
   if (!token || !name) return null;
@@ -47,7 +47,7 @@ export function Call() {
           <AlertCircle className="w-12 h-12 text-destructive mx-auto" />
           <h2 className="text-xl font-semibold">Connection Error</h2>
           <p className="text-muted-foreground">{error}</p>
-          <button 
+          <button
             onClick={() => setLocation("/")}
             className="px-6 py-3 bg-secondary hover:bg-secondary/80 rounded-xl transition-colors font-medium mt-4"
           >
@@ -59,59 +59,71 @@ export function Call() {
   }
 
   return (
-    <div className="h-screen w-full bg-black flex flex-col relative overflow-hidden">
-      
-      {/* Main Video Area */}
-      <div className="flex-1 relative p-4 pb-24 md:pb-28">
-        {/* Remote Video (Full Screen) */}
-        <div className="w-full h-full rounded-3xl overflow-hidden bg-zinc-900 border border-white/5 relative">
+    <div className="h-screen w-full bg-black flex flex-col overflow-hidden">
+
+      {/* Video Area — grows to fill remaining space above controls */}
+      <div className="relative flex-1 p-3 min-h-0">
+
+        {/* Remote Video (fills the whole area) */}
+        <div className="w-full h-full rounded-2xl overflow-hidden bg-zinc-900 border border-white/5">
           {remoteStream ? (
-            <VideoPlayer 
-              stream={remoteStream} 
-              className="w-full h-full !rounded-none" 
-              name="Guest" 
+            <VideoPlayer
+              stream={remoteStream}
+              className="w-full h-full !rounded-none"
+              name="Guest"
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground space-y-4">
-               <div className="relative">
-                 <div className="w-24 h-24 rounded-full border-2 border-dashed border-muted-foreground/30 animate-[spin_4s_linear_infinite]" />
-                 <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-16 h-16 rounded-full bg-secondary/50 flex items-center justify-center">
-                       <VideoIcon className="w-6 h-6 text-muted-foreground/50" />
-                    </div>
-                 </div>
-               </div>
-               <p className="font-medium">Waiting for others to join...</p>
-               <p className="text-sm opacity-50 text-center max-w-xs px-4">
-                 Share the room link and password with the person you want to talk to.
-               </p>
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full border-2 border-dashed border-muted-foreground/30 animate-[spin_4s_linear_infinite]" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-full bg-secondary/50 flex items-center justify-center">
+                    <VideoIcon className="w-6 h-6 text-muted-foreground/50" />
+                  </div>
+                </div>
+              </div>
+              <p className="font-medium">Waiting for others to join...</p>
+              <p className="text-sm opacity-50 text-center max-w-xs px-4">
+                Share the room link and password with the person you want to talk to.
+              </p>
             </div>
           )}
         </div>
 
-        {/* Local Video (PiP) */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.8, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          className="absolute bottom-28 right-8 md:bottom-32 md:right-10 w-32 md:w-48 aspect-[3/4] md:aspect-video rounded-2xl overflow-hidden shadow-2xl border-2 border-white/10 bg-zinc-800 z-10"
+        {/* Local Video PiP — top-right corner, always inside the video area */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4 }}
+          className="absolute top-6 right-6 w-36 md:w-52 aspect-video rounded-xl overflow-hidden shadow-2xl border-2 border-white/10 bg-zinc-800 z-10"
         >
-          <VideoPlayer 
-            stream={localStream} 
-            muted 
+          <VideoPlayer
+            stream={localStream}
+            muted
             mirrored
             className="w-full h-full !rounded-none"
           />
         </motion.div>
+
+        {/* Connection status badge */}
+        {isConnected && (
+          <div className="absolute top-6 left-6 px-3 py-1.5 bg-black/50 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse" />
+            <span className="text-xs font-medium text-white/80 tracking-wide">CONNECTED</span>
+          </div>
+        )}
       </div>
 
-      {/* Control Bar */}
-      <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black/80 to-transparent flex justify-center pb-8">
-        <div className="glass-panel px-6 py-4 rounded-3xl flex items-center gap-4 md:gap-6 shadow-[0_10_40px_rgba(0,0,0,0.5)]">
-          
+      {/* Control Bar — fixed height, never overlaps video area */}
+      <div className="shrink-0 flex justify-center items-center py-4 px-6 bg-black/80 backdrop-blur-sm border-t border-white/5">
+        <div className="flex items-center gap-4 md:gap-6">
+
           <button
             onClick={toggleMute}
             className={`w-12 h-12 md:w-14 md:h-14 flex items-center justify-center rounded-full transition-all ${
-              isMuted ? 'bg-destructive text-white' : 'bg-secondary hover:bg-secondary/80 text-foreground'
+              isMuted
+                ? "bg-destructive text-white"
+                : "bg-white/10 hover:bg-white/20 text-white"
             }`}
             title={isMuted ? "Unmute" : "Mute"}
           >
@@ -121,18 +133,20 @@ export function Call() {
           <button
             onClick={toggleVideo}
             className={`w-12 h-12 md:w-14 md:h-14 flex items-center justify-center rounded-full transition-all ${
-              isVideoOff ? 'bg-destructive text-white' : 'bg-secondary hover:bg-secondary/80 text-foreground'
+              isVideoOff
+                ? "bg-destructive text-white"
+                : "bg-white/10 hover:bg-white/20 text-white"
             }`}
             title={isVideoOff ? "Turn on camera" : "Turn off camera"}
           >
             {isVideoOff ? <VideoOff className="w-5 h-5 md:w-6 md:h-6" /> : <VideoIcon className="w-5 h-5 md:w-6 md:h-6" />}
           </button>
 
-          <div className="w-px h-8 bg-white/10 mx-2" />
+          <div className="w-px h-8 bg-white/10" />
 
           <button
             onClick={() => setLocation("/")}
-            className="w-16 h-12 md:w-20 md:h-14 flex items-center justify-center rounded-full bg-destructive hover:bg-destructive/90 text-white transition-all shadow-lg shadow-destructive/20 hover:scale-105 active:scale-95"
+            className="w-16 h-12 md:w-20 md:h-14 flex items-center justify-center rounded-full bg-destructive hover:bg-destructive/90 text-white transition-all shadow-lg shadow-destructive/30 hover:scale-105 active:scale-95"
             title="Leave call"
           >
             <Phone className="w-6 h-6 md:w-7 md:h-7 rotate-[135deg]" />
@@ -140,14 +154,6 @@ export function Call() {
 
         </div>
       </div>
-
-      {/* Connection Status Indicator */}
-      {isConnected && (
-        <div className="absolute top-6 left-6 px-3 py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e] animate-pulse" />
-          <span className="text-xs font-medium text-white/80 tracking-wide">CONNECTED</span>
-        </div>
-      )}
 
     </div>
   );
