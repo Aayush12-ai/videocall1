@@ -7,6 +7,11 @@ interface WebRTCState {
   isConnected: boolean;
   isMuted: boolean;
   isVideoOff: boolean;
+  isScreenSharing: boolean;
+  remoteIsScreenSharing: boolean;
+  screenShareRequest: { name: string } | null;
+  screenShareRequestPending: boolean;
+  screenShareDenied: boolean;
 }
 
 const ICE_SERVERS = {
@@ -17,6 +22,8 @@ const ICE_SERVERS = {
 };
 
 export function useWebRTC(roomId: string, token: string, name: string) {
+  const isHost = token === "host";
+
   const [state, setState] = useState<WebRTCState>({
     localStream: null,
     remoteStream: null,
@@ -24,18 +31,63 @@ export function useWebRTC(roomId: string, token: string, name: string) {
     isConnected: false,
     isMuted: false,
     isVideoOff: false,
+    isScreenSharing: false,
+    remoteIsScreenSharing: false,
+    screenShareRequest: null,
+    screenShareRequestPending: false,
+    screenShareDenied: false,
   });
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+
+  const sendWs = useCallback((data: object) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(data));
+    }
+  }, []);
+
+  const stopScreenShareInternal = useCallback(async (notify = true) => {
+    const pc = pcRef.current;
+    const cameraStream = localStreamRef.current;
+    const screenStream = screenStreamRef.current;
+
+    if (screenStream) {
+      screenStream.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+    }
+
+    if (pc && cameraStream) {
+      const cameraTrack = cameraStream.getVideoTracks()[0];
+      const videoSender = pc.getSenders().find(s => s.track?.kind === "video");
+      if (videoSender && cameraTrack) {
+        await videoSender.replaceTrack(cameraTrack);
+      }
+    }
+
+    const videoOnlyStream = cameraStream
+      ? new MediaStream(cameraStream.getVideoTracks())
+      : null;
+
+    setState(s => ({
+      ...s,
+      isScreenSharing: false,
+      localStream: videoOnlyStream,
+    }));
+
+    if (notify) {
+      sendWs({ type: "screen-share-stop" });
+    }
+  }, [sendWs]);
 
   useEffect(() => {
     let mounted = true;
 
     const init = async () => {
       try {
-        // 1. Get Local Media
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
           audio: {
@@ -52,13 +104,9 @@ export function useWebRTC(roomId: string, token: string, name: string) {
 
         localStreamRef.current = stream;
 
-        // Use a video-only stream for local preview — audio tracks must NEVER
-        // be attached to a local <video> element, even when muted, because some
-        // browsers still process the audio and cause the user to hear themselves.
         const videoOnlyStream = new MediaStream(stream.getVideoTracks());
         setState(s => ({ ...s, localStream: videoOnlyStream }));
 
-        // 2. Initialize Peer Connection — add the FULL stream (including audio)
         const pc = new RTCPeerConnection(ICE_SERVERS);
         pcRef.current = pc;
 
@@ -73,14 +121,13 @@ export function useWebRTC(roomId: string, token: string, name: string) {
         };
 
         pc.oniceconnectionstatechange = () => {
-          if (pc.iceConnectionState === 'connected') {
+          if (pc.iceConnectionState === "connected") {
             setState(s => ({ ...s, isConnected: true }));
-          } else if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+          } else if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
             setState(s => ({ ...s, isConnected: false, remoteStream: null }));
           }
         };
 
-        // 3. Initialize WebSocket Signaling
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const wsUrl = `${protocol}//${window.location.host}/ws`;
         const ws = new WebSocket(wsUrl);
@@ -103,38 +150,114 @@ export function useWebRTC(roomId: string, token: string, name: string) {
             const msg = JSON.parse(event.data);
 
             switch (msg.type) {
-              case "peer-joined":
-                // Existing peer creates the offer
+              case "peer-joined": {
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 ws.send(JSON.stringify({ type: "offer", sdp: pc.localDescription }));
                 break;
+              }
 
-              case "offer":
+              case "offer": {
                 await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 ws.send(JSON.stringify({ type: "answer", sdp: pc.localDescription }));
                 break;
+              }
 
-              case "answer":
+              case "answer": {
                 await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
                 break;
+              }
 
-              case "ice-candidate":
+              case "ice-candidate": {
                 if (msg.candidate) {
                   await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
                 }
                 break;
+              }
 
-              case "peer-left":
-                setState(s => ({ ...s, isConnected: false, remoteStream: null }));
-                // In a production app, we might need to recreate the PC for the next peer
+              case "peer-left": {
+                setState(s => ({
+                  ...s,
+                  isConnected: false,
+                  remoteStream: null,
+                  remoteIsScreenSharing: false,
+                  screenShareRequest: null,
+                }));
                 break;
-                
-              case "error":
+              }
+
+              case "screen-share-request": {
+                // Only hosts should receive this
+                if (isHost) {
+                  setState(s => ({ ...s, screenShareRequest: { name: msg.name || "Guest" } }));
+                }
+                break;
+              }
+
+              case "screen-share-approved": {
+                // Guest receives this — they are cleared to start sharing
+                setState(s => ({ ...s, screenShareRequestPending: false, screenShareDenied: false }));
+                // Now actually start the screen share
+                try {
+                  const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                  if (!mounted) {
+                    screenStream.getTracks().forEach(t => t.stop());
+                    return;
+                  }
+                  screenStreamRef.current = screenStream;
+                  const screenTrack = screenStream.getVideoTracks()[0];
+
+                  const videoSender = pc.getSenders().find(s => s.track?.kind === "video");
+                  if (videoSender) {
+                    await videoSender.replaceTrack(screenTrack);
+                  }
+
+                  setState(s => ({
+                    ...s,
+                    isScreenSharing: true,
+                    localStream: new MediaStream([screenTrack]),
+                  }));
+
+                  ws.send(JSON.stringify({ type: "screen-share-started" }));
+
+                  screenTrack.onended = () => {
+                    stopScreenShareInternal(true);
+                  };
+                } catch {
+                  setState(s => ({ ...s, screenShareRequestPending: false }));
+                }
+                break;
+              }
+
+              case "screen-share-denied": {
+                setState(s => ({
+                  ...s,
+                  screenShareRequestPending: false,
+                  screenShareDenied: true,
+                }));
+                // Auto-clear the denied message after 3s
+                setTimeout(() => {
+                  setState(s => ({ ...s, screenShareDenied: false }));
+                }, 3000);
+                break;
+              }
+
+              case "screen-share-started": {
+                setState(s => ({ ...s, remoteIsScreenSharing: true }));
+                break;
+              }
+
+              case "screen-share-stop": {
+                setState(s => ({ ...s, remoteIsScreenSharing: false }));
+                break;
+              }
+
+              case "error": {
                 setState(s => ({ ...s, error: msg.message || "Signaling error" }));
                 break;
+              }
             }
           } catch (err) {
             console.error("Error processing signaling message", err);
@@ -159,6 +282,9 @@ export function useWebRTC(roomId: string, token: string, name: string) {
       mounted = false;
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(track => track.stop());
       }
       if (pcRef.current) {
         pcRef.current.close();
@@ -191,5 +317,65 @@ export function useWebRTC(roomId: string, token: string, name: string) {
     }
   }, []);
 
-  return { ...state, toggleMute, toggleVideo };
+  const startScreenShare = useCallback(async () => {
+    if (isHost) {
+      // Host shares immediately without permission
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        screenStreamRef.current = screenStream;
+        const screenTrack = screenStream.getVideoTracks()[0];
+
+        const pc = pcRef.current;
+        if (pc) {
+          const videoSender = pc.getSenders().find(s => s.track?.kind === "video");
+          if (videoSender) {
+            await videoSender.replaceTrack(screenTrack);
+          }
+        }
+
+        setState(s => ({
+          ...s,
+          isScreenSharing: true,
+          localStream: new MediaStream([screenTrack]),
+        }));
+
+        sendWs({ type: "screen-share-started" });
+
+        screenTrack.onended = () => {
+          stopScreenShareInternal(true);
+        };
+      } catch {
+        // User cancelled the picker — do nothing
+      }
+    } else {
+      // Guest must request permission first
+      setState(s => ({ ...s, screenShareRequestPending: true, screenShareDenied: false }));
+      sendWs({ type: "screen-share-request", name });
+    }
+  }, [isHost, name, sendWs, stopScreenShareInternal]);
+
+  const stopScreenShare = useCallback(() => {
+    stopScreenShareInternal(true);
+  }, [stopScreenShareInternal]);
+
+  const approveScreenShare = useCallback(() => {
+    setState(s => ({ ...s, screenShareRequest: null }));
+    sendWs({ type: "screen-share-approved" });
+  }, [sendWs]);
+
+  const denyScreenShare = useCallback(() => {
+    setState(s => ({ ...s, screenShareRequest: null }));
+    sendWs({ type: "screen-share-denied" });
+  }, [sendWs]);
+
+  return {
+    ...state,
+    isHost,
+    toggleMute,
+    toggleVideo,
+    startScreenShare,
+    stopScreenShare,
+    approveScreenShare,
+    denyScreenShare,
+  };
 }

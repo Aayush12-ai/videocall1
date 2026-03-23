@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
-import { Mic, MicOff, Video as VideoIcon, VideoOff, Phone, AlertCircle } from "lucide-react";
+import {
+  Mic, MicOff, Video as VideoIcon, VideoOff, Phone,
+  AlertCircle, Monitor, MonitorOff, MonitorX, Check, X,
+} from "lucide-react";
 import { useWebRTC } from "@/hooks/use-webrtc";
 import { VideoPlayer } from "@/components/video-player";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 export function Call() {
   const params = useParams();
@@ -34,8 +37,18 @@ export function Call() {
     isConnected,
     isMuted,
     isVideoOff,
+    isScreenSharing,
+    remoteIsScreenSharing,
+    screenShareRequest,
+    screenShareRequestPending,
+    screenShareDenied,
+    isHost,
     toggleMute,
     toggleVideo,
+    startScreenShare,
+    stopScreenShare,
+    approveScreenShare,
+    denyScreenShare,
   } = useWebRTC(roomId, token, name);
 
   if (!token || !name) return null;
@@ -61,17 +74,89 @@ export function Call() {
   return (
     <div className="h-screen w-full bg-black flex flex-col overflow-hidden">
 
-      {/* Video Area — grows to fill remaining space above controls */}
+      {/* Host: permission request overlay from guest */}
+      <AnimatePresence>
+        {screenShareRequest && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl px-5 py-4 flex items-center gap-4 max-w-sm w-full"
+          >
+            <Monitor className="w-5 h-5 text-blue-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate">
+                {screenShareRequest.name} wants to share their screen
+              </p>
+              <p className="text-xs text-zinc-400 mt-0.5">Allow screen sharing?</p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={approveScreenShare}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-500 text-white transition-colors"
+                title="Allow"
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                onClick={denyScreenShare}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-zinc-700 hover:bg-zinc-600 text-white transition-colors"
+                title="Deny"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Guest: "waiting for permission" / "denied" toast */}
+      <AnimatePresence>
+        {(screenShareRequestPending || screenShareDenied) && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 border rounded-2xl shadow-2xl px-5 py-3 flex items-center gap-3 max-w-xs w-full ${
+              screenShareDenied
+                ? "bg-destructive/10 border-destructive/30"
+                : "bg-zinc-900 border-white/10"
+            }`}
+          >
+            {screenShareDenied ? (
+              <>
+                <MonitorX className="w-5 h-5 text-destructive shrink-0" />
+                <p className="text-sm text-white">Screen share was denied</p>
+              </>
+            ) : (
+              <>
+                <Monitor className="w-5 h-5 text-blue-400 animate-pulse shrink-0" />
+                <p className="text-sm text-white">Waiting for host to approve...</p>
+              </>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Video Area */}
       <div className="relative flex-1 p-3 min-h-0">
 
-        {/* Remote Video (fills the whole area) */}
+        {/* Remote Video */}
         <div className="w-full h-full rounded-2xl overflow-hidden bg-zinc-900 border border-white/5">
           {remoteStream ? (
-            <VideoPlayer
-              stream={remoteStream}
-              className="w-full h-full !rounded-none"
-              name="Guest"
-            />
+            <div className="relative w-full h-full">
+              <VideoPlayer
+                stream={remoteStream}
+                className="w-full h-full !rounded-none"
+                name={remoteIsScreenSharing ? undefined : "Guest"}
+              />
+              {remoteIsScreenSharing && (
+                <div className="absolute bottom-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-sm font-medium flex items-center gap-2">
+                  <Monitor className="w-4 h-4 text-blue-400" />
+                  <span>Screen share</span>
+                </div>
+              )}
+            </div>
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground space-y-4">
               <div className="relative">
@@ -90,7 +175,7 @@ export function Call() {
           )}
         </div>
 
-        {/* Local Video PiP — top-right corner, always inside the video area */}
+        {/* Local Video PiP */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -100,9 +185,15 @@ export function Call() {
           <VideoPlayer
             stream={localStream}
             muted
-            mirrored
+            mirrored={!isScreenSharing}
             className="w-full h-full !rounded-none"
           />
+          {isScreenSharing && (
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5 flex items-center gap-1">
+              <Monitor className="w-3 h-3 text-blue-400" />
+              <span className="text-xs text-white/80">Sharing</span>
+            </div>
+          )}
         </motion.div>
 
         {/* Connection status badge */}
@@ -114,9 +205,9 @@ export function Call() {
         )}
       </div>
 
-      {/* Control Bar — fixed height, never overlaps video area */}
+      {/* Control Bar */}
       <div className="shrink-0 flex justify-center items-center py-4 px-6 bg-black/80 backdrop-blur-sm border-t border-white/5">
-        <div className="flex items-center gap-4 md:gap-6">
+        <div className="flex items-center gap-3 md:gap-4">
 
           <button
             onClick={toggleMute}
@@ -140,6 +231,32 @@ export function Call() {
             title={isVideoOff ? "Turn on camera" : "Turn off camera"}
           >
             {isVideoOff ? <VideoOff className="w-5 h-5 md:w-6 md:h-6" /> : <VideoIcon className="w-5 h-5 md:w-6 md:h-6" />}
+          </button>
+
+          {/* Screen share button */}
+          <button
+            onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+            disabled={screenShareRequestPending}
+            className={`w-12 h-12 md:w-14 md:h-14 flex items-center justify-center rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              isScreenSharing
+                ? "bg-blue-600 hover:bg-blue-500 text-white"
+                : "bg-white/10 hover:bg-white/20 text-white"
+            }`}
+            title={
+              isScreenSharing
+                ? "Stop sharing"
+                : isHost
+                ? "Share screen"
+                : screenShareRequestPending
+                ? "Waiting for approval..."
+                : "Request screen share"
+            }
+          >
+            {isScreenSharing ? (
+              <MonitorOff className="w-5 h-5 md:w-6 md:h-6" />
+            ) : (
+              <Monitor className="w-5 h-5 md:w-6 md:h-6" />
+            )}
           </button>
 
           <div className="w-px h-8 bg-white/10" />

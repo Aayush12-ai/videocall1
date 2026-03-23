@@ -81,6 +81,7 @@ export function setupSignaling(server: Server) {
         "offer", "answer", "ice-candidate",
         "screen-share-request", "screen-share-approved",
         "screen-share-denied", "screen-share-stop",
+        "screen-share-started",
       ]);
       if (RELAY_TYPES.has(msg.type)) {
         for (const peer of peers) {
