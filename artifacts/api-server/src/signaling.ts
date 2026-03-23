@@ -75,7 +75,14 @@ export function setupSignaling(server: Server) {
       const room = getRoom(client.roomId);
       const peers = room.filter((c) => c !== client);
 
-      if (msg.type === "offer" || msg.type === "answer" || msg.type === "ice-candidate") {
+      // Relay all signaling messages to peers (offer, answer, ice-candidate,
+      // screen-share-request, screen-share-approved, screen-share-denied, screen-share-stop)
+      const RELAY_TYPES = new Set([
+        "offer", "answer", "ice-candidate",
+        "screen-share-request", "screen-share-approved",
+        "screen-share-denied", "screen-share-stop",
+      ]);
+      if (RELAY_TYPES.has(msg.type)) {
         for (const peer of peers) {
           send(peer.ws, msg);
         }
